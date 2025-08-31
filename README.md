@@ -69,10 +69,11 @@ Create a `.env` file in the backend directory with the following variables:
 NODE_ENV=development
 PORT=5000
 MONGODB_URI=mongodb://localhost:27017/portfolio_db
-JWT_SECRET=your_jwt_secret_key_here_change_in_production
+JWT_SECRET=dev_only_change_me
 JWT_EXPIRE=7d
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD=admin123
+# (Optionally for FIRST seed ONLY)
+# ADMIN_USERNAME=admin
+# ADMIN_PASSWORD=StrongTempPassword123!
 FRONTEND_URL=http://localhost:3000
 ```
 
@@ -248,6 +249,24 @@ ADMIN_EMAIL=admin@example.com
 Then run the seeder once and remove `ADMIN_SHOW_PASSWORD` + maybe the whole block.
 
 If you forget to set a password the script will generate one – store it safely.
+
+## ✅ Smoke & Load Tests
+
+Basic automated verification scripts are included:
+
+Smoke test (health, public projects, unauthorized profile 401):
+```bash
+SMOKE_BASE_URL=https://your-domain.com npm run smoke-test
+```
+
+Load test (burst for a public endpoint, default 50 requests):
+```bash
+LOAD_BASE_URL=https://your-domain.com npm run load-test -- /api/portfolio/projects 100
+```
+
+Pass criteria:
+- Smoke: all checks PASS.
+- Load: >90% 200 responses, reasonable p95 latency (<1s typical for this app).
 
 ## 📞 Support
 

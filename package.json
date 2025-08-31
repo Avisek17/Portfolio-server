@@ -11,6 +11,8 @@
   "create-admin": "node createAdmin.js",
   "seed": "node scripts/seedDatabase.js",
   "rotate-secrets": "node scripts/rotateSecrets.js",
+  "smoke-test": "node scripts/smokeTest.js",
+  "load-test": "node scripts/loadTest.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
