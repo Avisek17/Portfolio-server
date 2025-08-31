@@ -6,8 +6,9 @@ import compression from 'compression';
 import morgan from 'morgan';
 import dotenv from 'dotenv';
 import path from 'path';
+import crypto from 'crypto';
 import { fileURLToPath } from 'url';
-import connectDB from './config/database.js';
+import connectDB, { getDbState } from './config/database.js';
 import authRoutes from './routes/authRoutes.js';
 import portfolioRoutes from './routes/portfolioRoutes.js';
 import skillRoutes from './routes/skillRoutes.js';
@@ -32,8 +33,23 @@ if (missing.length) {
   console.warn(`⚠️  Missing required environment variables: ${missing.join(', ')}. Startup will continue but this is unsafe for production.`);
 }
 
-// Connect to MongoDB (after env load)
-connectDB();
+// Production hardening warnings
+if (process.env.NODE_ENV === 'production') {
+  if (process.env.ADMIN_PASSWORD && /^(admin|admin123)$/i.test(process.env.ADMIN_PASSWORD)) {
+    console.warn('🛑 Insecure ADMIN_PASSWORD detected. Change it and remove ADMIN_* vars after seeding.');
+  }
+  if (process.env.JWT_SECRET && process.env.JWT_SECRET.length < 48) {
+    console.warn('🛑 JWT_SECRET is too short (<48 chars). Rotate to a 64+ char random secret ASAP.');
+  }
+  if (process.env.ALLOW_DEV_ORIGINS === 'true') {
+    console.warn('⚠️  ALLOW_DEV_ORIGINS=true in production. Remove this once local testing is finished.');
+  }
+  if (/mongodb\+srv:\/\/.*:.*@/i.test(process.env.MONGODB_URI || '')) {
+    console.warn('⚠️  MongoDB URI contains embedded credentials. Ensure user has least privileges and is rotated periodically.');
+  }
+}
+
+// We'll connect to MongoDB before starting the server (see bottom)
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -43,8 +59,38 @@ app.set('trust proxy', 1);
 
 // Security middleware (customize as needed; CSP can be added later if embedding external assets is controlled)
 app.use(helmet({
-  crossOriginResourcePolicy: { policy: 'cross-origin' }, // allow serving uploads across origins as configured
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
 }));
+
+// Content Security Policy (adjust if you add external CDNs)
+const strictCsp = process.env.CSP_STRICT === 'true';
+app.use(
+  helmet.contentSecurityPolicy({
+    useDefaults: true,
+    directives: {
+      defaultSrc: ["'self'"],
+      imgSrc: ["'self'", 'data:', 'https:'],
+      fontSrc: ["'self'", 'data:'],
+      scriptSrc: ["'self'"],
+      styleSrc: strictCsp ? ["'self'"] : ["'self'", "'unsafe-inline'"],
+      connectSrc: ["'self'", ...(process.env.FRONTEND_URLS ? process.env.FRONTEND_URLS.split(',').map(o=>o.trim()) : [])],
+      objectSrc: ["'none'"],
+      frameAncestors: ["'self'"],
+      upgradeInsecureRequests: []
+    }
+  })
+);
+
+// Additional security headers beyond Helmet defaults
+app.use((req, res, next) => {
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Permissions-Policy', "geolocation=(), microphone=(), camera=()");
+  // Conditionally add HSTS (only when served via HTTPS and explicitly enabled)
+  if (process.env.ENABLE_HSTS === 'true' && req.secure) {
+    res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload');
+  }
+  next();
+});
 
 // Compression (gzip) – Nginx will usually handle this, but keep as fallback
 app.use(compression());
@@ -65,19 +111,33 @@ const limiter = rateLimit({
 app.use(limiter);
 
 // CORS configuration (supports comma-separated FRONTEND_URLS)
-const rawOrigins = process.env.FRONTEND_URLS || process.env.FRONTEND_URL || 'http://localhost:3000';
-const allowedOrigins = rawOrigins.split(',').map(o => o.trim()).filter(Boolean);
+const rawOrigins = process.env.FRONTEND_URLS || process.env.FRONTEND_URL || '';
+let allowedOrigins = rawOrigins.split(',').map(o => o.trim()).filter(Boolean);
+
+// Always allow explicit dev origins when not in production OR when ALLOW_DEV_ORIGINS=true
+const devOrigins = ['http://localhost:3000', 'http://127.0.0.1:3000'];
+if (process.env.NODE_ENV !== 'production' || process.env.ALLOW_DEV_ORIGINS === 'true') {
+  devOrigins.forEach(o => { if (!allowedOrigins.includes(o)) allowedOrigins.push(o); });
+}
+
+// Fallback if none specified at all
+if (allowedOrigins.length === 0) {
+  allowedOrigins = devOrigins.slice();
+}
+
 app.use(cors({
   origin: (origin, cb) => {
-    if (!origin) return cb(null, true); // non-browser or same-origin
-    if (allowedOrigins.includes(origin)) return cb(null, true);
-    return cb(new Error('CORS not allowed for this origin')); 
+    if (!origin) return cb(null, true); // non-browser / same-origin
+    if (allowedOrigins.includes(origin)) return cb(null, origin); // explicitly echo allowed origin
+    if (process.env.DEBUG_CORS === 'true') console.warn(`CORS denied for origin: ${origin}`);
+    return cb(null, false);
   },
   credentials: true,
   exposedHeaders: ['Content-Disposition'],
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin']
 }));
+// Explicitly handle preflight for all routes
 app.options('*', cors());
 
 // Body parsing middleware (single urlencoded call)
@@ -95,13 +155,19 @@ app.use('/api/contact', contactRoutes);
 
 // Serve static uploads (ensure Nginx can alternatively handle this)
 app.use('/uploads', (req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', allowedOrigins[0] || 'http://localhost:3000');
+  const reqOrigin = req.headers.origin;
+  if (reqOrigin && allowedOrigins.includes(reqOrigin)) {
+    res.setHeader('Access-Control-Allow-Origin', reqOrigin);
+  } else {
+    res.setHeader('Access-Control-Allow-Origin', allowedOrigins[0] || 'http://localhost:3000');
+  }
+  res.setHeader('Vary', 'Origin');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
   res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  // Disable caching for now (adjust if wanting long-term caching)
   res.setHeader('Cache-Control', 'private, max-age=60');
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
 }, express.static(path.join(__dirname, 'uploads'), {
   setHeaders: (res, filePath) => {
@@ -117,7 +183,8 @@ app.get('/api/health', (req, res) => {
   res.status(200).json({
     status: 'success',
     message: 'Portfolio Backend API is running',
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    db: getDbState()
   });
 });
 
@@ -132,19 +199,47 @@ app.use('*', (req, res) => {
   });
 });
 
-const server = app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📦 Environment: ${process.env.NODE_ENV}`);
-  console.log(`🌐 Allowed Origins: ${allowedOrigins.join(', ')}`);
+let server;
+const startServer = (port, attempt = 0) => {
+  server = app.listen(port, () => {
+    console.log(`🚀 Server running on port ${port}`);
+    console.log(`📦 Environment: ${process.env.NODE_ENV}`);
+    console.log(`🌐 Allowed Origins: ${allowedOrigins.join(', ')}`);
+  }).on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      if (process.env.NODE_ENV !== 'production' && attempt < 5) {
+        const newPort = port + 1;
+        console.warn(`⚠️  Port ${port} in use. Trying ${newPort}...`);
+        startServer(newPort, attempt + 1);
+      } else {
+        console.error(`❌ Port ${port} is already in use and auto-retry aborted.`);
+        process.exit(1);
+      }
+    } else {
+      console.error('❌ Server start error:', err);
+      process.exit(1);
+    }
+  });
+};
+
+// Connect DB then start server
+connectDB().then(() => {
+  startServer(parseInt(PORT, 10));
+}).catch(err => {
+  console.error('Failed to start server due to DB connection error:', err.message);
 });
 
 // Graceful shutdown helpers
 const shutdown = (signal) => {
   console.log(`${signal} received. Shutting down gracefully...`);
-  server.close(() => {
-    console.log('HTTP server closed');
+  if (server) {
+    server.close(() => {
+      console.log('HTTP server closed');
+      process.exit(0);
+    });
+  } else {
     process.exit(0);
-  });
+  }
   // Force exit after 10s
   setTimeout(() => process.exit(1), 10000).unref();
 };

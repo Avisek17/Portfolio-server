@@ -8,8 +8,9 @@
     "start": "node server.js",
     "build": "react-scripts build || true",
     "dev": "nodemon server.js",
-    "create-admin": "node createAdmin.js",
-    "seed": "node scripts/seedDatabase.js",
+  "create-admin": "node createAdmin.js",
+  "seed": "node scripts/seedDatabase.js",
+  "rotate-secrets": "node scripts/rotateSecrets.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [

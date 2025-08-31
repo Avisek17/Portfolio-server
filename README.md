@@ -220,13 +220,34 @@ All API responses follow this structure:
 }
 ```
 
-## 🔧 Admin Credentials
+## 🔧 Admin Seeding (Secure First User)
 
-**Default Admin Login:**
-- Username: `admin`
-- Password: `admin123`
+Production deployment should NOT rely on hard‑coded default credentials. Instead use the one‑time seeding script:
 
-⚠️ **Important**: Change these credentials in production!
+```bash
+npm run create-admin
+```
+
+Behaviour:
+1. If ANY admin user already exists it aborts (idempotent).
+2. Reads `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `ADMIN_EMAIL` from environment.
+3. If `ADMIN_PASSWORD` is omitted a strong random password is generated and printed once.
+4. Password supplied via env is hidden unless you set `ADMIN_SHOW_PASSWORD=true` temporarily.
+5. After successful login you should:
+  - Change the password (implement/change-password route already exists).
+  - Remove `ADMIN_*` vars from `.env`.
+  - Optionally delete `createAdmin.js` so it cannot be re-run.
+
+Example minimal production .env excerpt:
+```env
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=ChangeThisImmediately!42
+ADMIN_EMAIL=admin@example.com
+# ADMIN_SHOW_PASSWORD=true   # (only for first run if needed)
+```
+Then run the seeder once and remove `ADMIN_SHOW_PASSWORD` + maybe the whole block.
+
+If you forget to set a password the script will generate one – store it safely.
 
 ## 📞 Support
 
