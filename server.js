@@ -27,6 +27,21 @@ const __dirname = path.dirname(__filename);
 
 // Basic required env validation before DB connect
 dotenv.config();
+// If full URI not provided, attempt to build it from discrete credential parts
+if (!process.env.MONGODB_URI) {
+  const u = process.env.MONGODB_USER;
+  const p = process.env.MONGODB_PASSWORD;
+  const h = process.env.MONGODB_HOST; // e.g. portfolio.ay86cb3.mongodb.net
+  const d = process.env.MONGODB_DB;   // e.g. portfolio_db
+  if (u && p && h && d) {
+    const encoded = encodeURIComponent(p);
+    const appName = process.env.MONGODB_APPNAME || 'Portfolio';
+    const authSource = process.env.MONGODB_AUTHSOURCE ? `&authSource=${encodeURIComponent(process.env.MONGODB_AUTHSOURCE)}` : '';
+    process.env.MONGODB_URI = `mongodb+srv://${u}:${encoded}@${h}/${d}?retryWrites=true&w=majority&appName=${appName}${authSource}`;
+    console.log('🔐 MongoDB URI constructed from discrete env variables (password not printed).');
+  }
+}
+
 const requiredEnv = ['MONGODB_URI', 'JWT_SECRET'];
 const missing = requiredEnv.filter(k => !process.env[k]);
 if (missing.length) {
@@ -44,8 +59,8 @@ if (process.env.NODE_ENV === 'production') {
   if (process.env.ALLOW_DEV_ORIGINS === 'true') {
     console.warn('⚠️  ALLOW_DEV_ORIGINS=true in production. Remove this once local testing is finished.');
   }
-  if (/mongodb\+srv:\/\/.*:.*@/i.test(process.env.MONGODB_URI || '')) {
-    console.warn('⚠️  MongoDB URI contains embedded credentials. Ensure user has least privileges and is rotated periodically.');
+  if (/mongodb\+srv:\/\/.*:.*@/i.test(process.env.MONGODB_URI || '') && process.env.MONGODB_SUPPRESS_URI_WARNING !== 'true') {
+    console.warn('⚠️  MongoDB URI contains embedded credentials. Prefer discrete vars (MONGODB_USER/PASSWORD/HOST/DB) and rotate least-privilege user periodically. Set MONGODB_SUPPRESS_URI_WARNING=true to silence this warning.');
   }
 }
 

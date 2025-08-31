@@ -147,6 +147,7 @@ const profileValidation = [
 
 // Routes
 router.get('/', getProfile);
-router.put('/', updateProfile);  // Temporarily removed validation
+// Protect update route so only authenticated admin can modify profile
+router.put('/', protect, updateProfile);  // Validation can be re-enabled by adding profileValidation before protect
 
 export default router;

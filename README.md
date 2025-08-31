@@ -188,6 +188,38 @@ FRONTEND_URL=https://your-frontend-domain.com
 - **DigitalOcean**: VPS deployment
 - **AWS/Azure**: Cloud deployment
 
+### Docker Compose (Recommended)
+1. Copy `docker-compose.yml` and `infra/nginx/default.conf` to your server.
+2. Create `portfolio-backend/.env.production` from `.env.example.production` (never commit real secrets).
+3. Run:
+  ```bash
+  docker compose pull || true
+  docker compose build
+  docker compose up -d
+  ```
+4. Seed admin once: `docker compose exec backend node createAdmin.js` then remove `ADMIN_*` lines and restart backend.
+5. Issue SSL certs (Certbot) and uncomment HTTPS block + redirect in Nginx config.
+6. (Optional) Enable `ENABLE_HSTS=true` and later `CSP_STRICT=true` after removing inline styles.
+7. Run smoke test: `SMOKE_BASE_URL=https://your-domain docker compose exec backend npm run smoke-test`.
+
+Persistent uploads: An `uploads` named volume is defined so files survive container recreation.
+
+### GitHub Actions Automated Deploy
+Provided workflow: `.github/workflows/deploy-production.yml`.
+
+Secrets required:
+| Secret | Purpose |
+|--------|---------|
+| DEPLOY_HOST | SSH host/IP |
+| DEPLOY_USER | SSH user |
+| DEPLOY_KEY  | Private key (PEM) |
+| DEPLOY_PATH | Absolute deploy directory on server |
+| MONGODB_URI or discrete vars | Database access |
+| JWT_SECRET | Auth secret |
+| FRONTEND_URLS | Comma list of allowed origins |
+
+Add secrets in repo settings, push to `main`, workflow will build & deploy.
+
 ## 🧪 Testing
 
 Run the health check endpoint:
@@ -267,6 +299,38 @@ LOAD_BASE_URL=https://your-domain.com npm run load-test -- /api/portfolio/projec
 Pass criteria:
 - Smoke: all checks PASS.
 - Load: >90% 200 responses, reasonable p95 latency (<1s typical for this app).
+
+## 🌐 FTP / Shared Hosting Frontend Deployment
+If you are hosting ONLY the React build on an FTP/shared hosting environment (e.g. cPanel) and the backend API elsewhere:
+
+1. In the `portfolio/` folder create `.env.production`:
+  ```env
+  REACT_APP_API_URL=https://api.your-backend-domain.com/api
+  REACT_APP_SERVER_URL=https://api.your-backend-domain.com
+  ```
+2. Run a production build locally:
+  ```bash
+  cd portfolio
+  npm install
+  npm run build
+  ```
+3. Upload the contents of `portfolio/build/` to your hosting `public_html` (or subfolder). Include the generated `asset-manifest.json`, static folder, index.html, favicon, etc.
+4. Add the provided `.htaccess` (ensures SPA routing + caching). If one exists, merge rewrite + caching rules.
+5. Verify site loads (index.html) and API requests go to the external backend domain (check Network tab).
+6. For updates, rebuild and upload changed files (hashed filenames allow long cache for assets; index.html handles updates).
+
+Backend considerations:
+- Ensure CORS `FRONTEND_URLS` contains the exact deployed origin (https://yourdomain.tld).
+- Serve uploads via full URL so `formatImageUrl` resolves correctly.
+- Use HTTPS on backend to avoid mixed-content blocks.
+
+Troubleshooting:
+| Issue | Cause | Fix |
+|-------|-------|-----|
+| 404 on page refresh | Missing rewrite | Ensure `.htaccess` rewrite rules present |
+| API CORS error | FRONTEND_URLS mismatch | Update backend `.env` + restart |
+| Mixed content warnings | Backend over HTTP | Enable HTTPS on backend |
+| Assets not updating | Browser cache | Hard refresh / bump index.html (deploy) |
 
 ## 📞 Support
 
