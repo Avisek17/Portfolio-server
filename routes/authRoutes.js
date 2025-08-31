@@ -1,5 +1,6 @@
 import express from 'express';
 import { body } from 'express-validator';
+import { validate } from '../middleware/validate.js';
 import {
   login,
   getProfile,
@@ -48,14 +49,14 @@ const passwordValidation = [
 ];
 
 // Public routes
-router.post('/login', loginValidation, login);
+router.post('/login', loginValidation, validate, login);
 
 // Protected routes
 router.use(protect); // All routes below this middleware are protected
 
 router.get('/profile', getProfile);
-router.put('/profile', profileValidation, updateProfile);
-router.put('/change-password', passwordValidation, changePassword);
+router.put('/profile', profileValidation, validate, updateProfile);
+router.put('/change-password', passwordValidation, validate, changePassword);
 router.get('/verify', verifyToken);
 
 export default router;
