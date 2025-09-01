@@ -1,105 +1,25 @@
-name: FTP Deploy Portfolio
+name: Deploy Portfolio
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
-  workflow_dispatch:
-
-
-env:
-  #
-  FTP_SERVER: ${{ secrets.FTP_SERVER }}
-  FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
-  FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
-  FTP_PROTOCOL: ftps          # Options: ftp | ftps | ftps-legacy
-  FTP_PORT: 21                # Change if host uses custom port
-  REMOTE_DIR: /public_html/   # Adjust to your document root/subfolder
-  BUILD_DIR: build            # React build output directory
 
 jobs:
-  build-and-deploy:
-    name: Build & FTP Deploy
+  build:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
-
       - name: Install dependencies
-        run: npm ci
+        run: npm install
+      - run: npm run build
 
-      - name: Build project
-        run: npm run build
-
-      - name: Verify build folder exists
-        run: |
-          if [ ! -d "$BUILD_DIR" ]; then
-            echo "Build directory '$BUILD_DIR' not found" >&2
-            exit 1
-          fi
-          ls -al $BUILD_DIR
-
-      - name: Validate required secrets
-        run: |
-          for var in FTP_SERVER FTP_USERNAME FTP_PASSWORD; do
-            if [ -z "${!var}" ]; then
-              echo "::error::Missing required secret $var"; exit 1; fi; done
-          echo "All required secrets present."
-
-      # Optional: create a deployment manifest for incremental sync context
-      - name: Generate hash manifest (optional)
-        run: |
-          find $BUILD_DIR -type f -exec sha256sum {} \; > build-manifest.sha256
-          echo "Files hashed: $(wc -l < build-manifest.sha256)"
-
-      - name: FTP Deploy (incremental sync)
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+      - name: Deploy to github pages
+        uses: peaceiris/actions-gh-pages@v4
         with:
-          server: ${{ env.FTP_SERVER }}
-            
-          username: ${{ env.FTP_USERNAME }}
-          password: ${{ env.FTP_PASSWORD }}
-          protocol: ${{ env.FTP_PROTOCOL }}
-          port: ${{ env.FTP_PORT }}
-          local-dir: ${{ env.BUILD_DIR }}/
-          server-dir: ${{ env.REMOTE_DIR }}
-          dangerous-clean-slate: false
-          exclude: |
-            **/.git*
-            **/.DS_Store
-            **/node_modules
-            **/README.md
-            **/src
-
-      - name: Post-deploy summary
-        run: |
-          echo "Deployment complete to $FTP_SERVER:$FTP_PORT -> (hidden remote dir)"
-          echo "Timestamp: $(date -u)"
-
-  # # Optional separate job to allow manual clean of remote directory
-  # clean-remote:
-  #   if: false  # set to true and dispatch manually if you need a full clean
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - name: FTP Clean (Dangerous - removes remote contents)
-  #       uses: SamKirkland/FTP-Deploy-Action@v4.3.5
-  #       with:
-  #         server: ${{ env.FTP_SERVER }}
-  #         username: ${{ env.FTP_USERNAME }}
-  #         password: ${{ env.FTP_PASSWORD }}
-  #         protocol: ${{ env.FTP_PROTOCOL }}
-  #         port: ${{ env.FTP_PORT }}
-  #         local-dir: ${{ env.BUILD_DIR }}/
-  #         server-dir: ${{ env.REMOTE_DIR }}
-  #         dangerous-clean-slate: true
-  #         exclude: |
-  #           **/.git*
-  #           **/.DS_Store
-  #           **/node_modules
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: portfolio-backend
