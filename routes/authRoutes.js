@@ -1,7 +1,5 @@
 import express from 'express';
 import { body } from 'express-validator';
-import rateLimit from 'express-rate-limit';
-import { validate } from '../middleware/validate.js';
 import {
   login,
   getProfile,
@@ -12,15 +10,6 @@ import {
 import { protect } from '../middleware/auth.js';
 
 const router = express.Router();
-
-// Login rate limiter (stricter than global): 5 attempts per 5 minutes per IP
-const loginLimiter = rateLimit({
-  windowMs: 5 * 60 * 1000,
-  max: 5,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: 'Too many login attempts. Please try again in 5 minutes.'
-});
 
 // Login validation rules
 const loginValidation = [
@@ -59,14 +48,14 @@ const passwordValidation = [
 ];
 
 // Public routes
-router.post('/login', loginLimiter, loginValidation, validate, login);
+router.post('/login', loginValidation, login);
 
 // Protected routes
 router.use(protect); // All routes below this middleware are protected
 
 router.get('/profile', getProfile);
-router.put('/profile', profileValidation, validate, updateProfile);
-router.put('/change-password', passwordValidation, validate, changePassword);
+router.put('/profile', profileValidation, updateProfile);
+router.put('/change-password', passwordValidation, changePassword);
 router.get('/verify', verifyToken);
 
 export default router;

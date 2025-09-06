@@ -4,8 +4,6 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
 import { protect } from '../middleware/auth.js';
-import { body } from 'express-validator';
-import { validate } from '../middleware/validate.js';
 import { createResume, listResumes, deleteResume, deleteResumeById } from '../controllers/resumeController.js';
 
 const router = express.Router();
@@ -53,7 +51,7 @@ const upload = multer({
   }
 });
 
-// Upload image endpoint (no extra body fields, but ensure file present via multer)
+// Upload image endpoint
 router.post('/image', upload.single('image'), (req, res) => {
   try {
     if (!req.file) {
@@ -163,16 +161,9 @@ router.get('/resume/file/:filename', (req, res) => {
 });
 
 // --- Certificate file uploads (PDF, images, etc.) ---
-const certAllowed = [
-  'application/pdf',
-  'image/png',
-  'image/jpeg',
-  'image/jpg',
-  'image/webp'
-];
 const certFileFilter = (req, file, cb) => {
-  if (certAllowed.includes(file.mimetype)) return cb(null, true);
-  return cb(new Error('Only PDF or image files (png, jpg, webp) are allowed for certificates'), false);
+  // Accept any file type for certificates; validate size only
+  cb(null, true);
 };
 
 const certUpload = multer({
